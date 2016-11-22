@@ -51,7 +51,7 @@ struct
 
   fun compareHelper (t: A.typ, e0: A.exp, e1: A.exp, ord: order, env: compileenv, outs: T.outstream) : compileenv =
     case t of
-    A.Tint => let val (locs,nextLoc,nextLabel,fncs) = env
+    A.Tbool => let val (locs,nextLoc,nextLabel,fncs) = env
                   val comp = (case ord of
                               Lt => "if_icmplt "
                               | Gt => "if_icmpgt "
@@ -176,11 +176,11 @@ struct
                                                (locs,nextLoc,nextLabel,fncs)
                                              end
                               | "printInt" => let val (locs,nextLoc,nextLabel,fncs) = compileExpList(exps,outs,env)
-                                               val a = writeString("invokestatic CSupport/" ^ id
+                                                  val a = writeString("invokestatic CSupport/" ^ id
                                                       ^ "(I)V" ,outs)
-                                           in
-                                             (locs,nextLoc,nextLabel,fncs)
-                                           end
+                                              in
+                                                (locs,nextLoc,nextLabel,fncs)
+                                              end
                               | "readDouble" => let val (locs,nextLoc,nextLabel,fncs) = compileExpList(exps,outs,env)
                                                     val a = writeString("invokestatic CSupport/" ^ id
                                                       ^ "()D" ,outs)
@@ -343,7 +343,6 @@ struct
     let val (locs,nextLoc,nextLabel,fncs) = env in
     case stm of
       A.SExp(e) => let val newenv = compileExp(e,outs,env)
-                       val a = writeString("pop",outs) 
                    in
                      newenv
                    end
@@ -429,12 +428,11 @@ struct
                             in
                               env'
                             end
-      | A.SReturn(e) => let val env' = compileExp(e,outs,env)
-                            val a = writeString("ireturn",outs)
+      | A.SReturn(e) => let val a = writeString("return",outs)
                         in
-                          env'
+                          env
                         end
-      | A.SVReturn => let val a = writeString("ireturn",outs)
+      | A.SVReturn => let val a = writeString("return",outs)
                       in
                         env
                       end
