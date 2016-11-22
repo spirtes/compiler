@@ -13,7 +13,7 @@ struct
   exception Unimplemented
 
   type locs = int Env.env
-  type nextLoc = int list
+  type nextLoc = int
   type nextLabel = int
   type fncs = (A.paramdecl list * A.typ) Env.env
 
@@ -140,16 +140,19 @@ struct
                                            val d = writeString("ldc 1",outs)
                                            val e = writeString(lbl,outs) in
                                              (locs',nextLoc',nextlbl,fncs')
-                                           end)
+                                           end
+                                | _ => raise Unimplemented)
                               in
                                 env2
                               end
+      | _ => raise Unimplemented
 
   and compileExp(exp : A.exp, outs: T.outstream, env : compileenv) : compileenv =
     case exp of
-      A.EInt(x) => let val a = writeString(("ldc " ^ Int.toString(x)), outs) in
-                   env
-                 end
+      A.EInt(x) => let val a = writeString(("ldc " ^ Int.toString(x)), outs)
+                   in
+                     env
+                   end
     | A.EDouble(x) => let val a = writeString("ldc2_w " ^ Real.toString(x), outs ) in
                         env
                       end
@@ -165,12 +168,53 @@ struct
                          val a = writeString(getPrefix(t) ^ "load " ^ Int.toString(idloc), outs) in
                            env
                       end
-    (*| A.ECall((id,exps),t) => let val (locs,nextLoc,nextLabel,fncs) = compileExpList(exps,outs,env)
-
-
-                                    val typ = getFunType(t)
-                                    val a = writeString("invokestatic C/" ^ id
-                                                ^ "(" ^ args ^ ")" ^ typ,outs)*)
+    | A.ECall((id,exps),t) => (case id of
+                                "readInt" => let val (locs,nextLoc,nextLabel,fncs) = compileExpList(exps,outs,env)
+                                                 val a = writeString("invokestatic CSupport/" ^ id
+                                                        ^ "()I" ,outs)
+                                             in
+                                               (locs,nextLoc,nextLabel,fncs)
+                                             end
+                              | "printInt" => let val (locs,nextLoc,nextLabel,fncs) = compileExpList(exps,outs,env)
+                                               val a = writeString("invokestatic CSupport/" ^ id
+                                                      ^ "(I)V" ,outs)
+                                           in
+                                             (locs,nextLoc,nextLabel,fncs)
+                                           end
+                              | "readDouble" => let val (locs,nextLoc,nextLabel,fncs) = compileExpList(exps,outs,env)
+                                                    val a = writeString("invokestatic CSupport/" ^ id
+                                                      ^ "()D" ,outs)
+                                                in
+                                                  (locs,nextLoc,nextLabel,fncs)
+                                                end
+                             | "printDouble" => let val (locs,nextLoc,nextLabel,fncs) = compileExpList(exps,outs,env)
+                                                 val a = writeString("invokestatic CSupport/" ^ id
+                                                        ^ "(D)V" ,outs)
+                                             in
+                                               (locs,nextLoc,nextLabel,fncs)
+                                             end
+                              | "readBool" => let val (locs,nextLoc,nextLabel,fncs) = compileExpList(exps,outs,env)
+                                                  val a = writeString("invokestatic CSupport/" ^ id
+                                                    ^ "()Z" ,outs)
+                                              in
+                                                (locs,nextLoc,nextLabel,fncs)
+                                              end
+                              | "printBool" => let val (locs,nextLoc,nextLabel,fncs) = compileExpList(exps,outs,env)
+                                                  val a = writeString("invokestatic CSupport/" ^ id
+                                                         ^ "(Z)V" ,outs)
+                                               in
+                                                 (locs,nextLoc,nextLabel,fncs)
+                                               end
+                              | _ =>
+    let val (locs,nextLoc,nextLabel,fncs) = compileExpList(exps,outs,env)
+                                  val (params,t) = Env.lookup fncs id
+                                  val args = getFunArgs(params)
+                                  val typ = getFunType(t)
+                                  val a = writeString("invokestatic C/" ^ id
+                                                ^ "(" ^ args ^ ")" ^ typ,outs)
+                              in
+                                (locs,nextLoc,nextLabel,fncs)
+                              end)
     | A.EPreIncr(id,t) => let val (locs,nextLoc,nextLabel,fncs) = env
                                val idloc = Env.lookup locs id
                                val a = writeString(getPrefix(t) ^ "load " ^ Int.toString(idloc),outs)
@@ -288,35 +332,24 @@ struct
 
 
   fun incNextLoc(n : nextLoc, t : A.typ) : nextLoc =
-    let val inc = (case t of
-                    A.Tbool => 1
-                  | A.Tint => 1
-                  | A.Tdouble => 2
-                  | _ => 0)
-    in
-      case n of
-        [] => raise Unimplemented
-      | x::xs => (x+inc)::xs
-    end
-
-
-  fun getNextLoc(n : nextLoc) : int =
-    case n of
-      [] => raise Unimplemented
-    | x::xs => x
+    case t of
+      A.Tbool => n + 1
+    | A.Tint => n + 1
+    | A.Tdouble => n + 2
+    | _ => n
 
 
   fun compileStm (stm : A.stm, outs : T.outstream, env : compileenv) : compileenv =
     let val (locs,nextLoc,nextLabel,fncs) = env in
     case stm of
       A.SExp(e) => let val newenv = compileExp(e,outs,env)
-                       val a = writeString("pop",outs)
+                       val a = writeString("pop",outs) 
                    in
                      newenv
                    end
     | A.SDecl(t,ids) => (case ids of
                            [] => env
-                        |  id::xs => let val newloc = Env.extend locs id (getNextLoc(nextLoc))
+                        |  id::xs => let val newloc = Env.extend locs id nextLoc
                         in
                           compileStm(A.SDecl(t,xs),outs,
                                     (newloc,incNextLoc(nextLoc,t),nextLabel,fncs))
@@ -324,8 +357,9 @@ struct
 
     | A.SInit(t,idexplist) => (case idexplist of
                                    [] => env
-                                 | (id,e)::xs => let val (locs',nextLoc',nextLabel',fncs') = compileExp(e,outs,env)
-                                                     val newloc = Env.extend locs' id (getNextLoc(nextLoc'))
+                                 | (id,e)::xs => let val (locs',nextLoc',nextLabel',fncs') =
+                                                          compileExp(e,outs,env)
+                                                     val newloc = Env.extend locs' id nextLoc'
                                                      val b = writeString(getPrefix(t) ^ "store "
                                                               ^ (Int.toString(Env.lookup newloc id)),outs)
                                                  in
@@ -347,7 +381,8 @@ struct
     | A.SWhile(e,s) => let val (locs,nextLoc,nextLabel,fncs) = env
                            val (testlbl,label0) = genLabel(nextLabel)
                            val a = writeString(testlbl ^ ":",outs)
-                           val (locs',nextLoc',nextLabel',fncs') = compileExp(e,outs,(locs,nextLoc,label0,fncs))
+                           val (locs',nextLoc',nextLabel',fncs') =
+                                compileExp(e,outs,(locs,nextLoc,label0,fncs))
                            val (endlbl,label1) = genLabel(nextLabel')
                            val b = writeString("ifeq " ^ endlbl,outs)
                            val env' = compileStm(s,outs,(locs',nextLoc',label1,fncs'))
@@ -358,12 +393,13 @@ struct
                         end
 
     | A.SFor((t,id,e0),e1,e2,s) => let val (locs',nextLoc',nextLabel',fncs') = compileExp(e0,outs,env)
-                                       val newloc = Env.extend locs' id (getNextLoc(nextLoc'))
+                                       val newloc = Env.extend locs' id nextLoc'
                                        val b = writeString(getPrefix(t) ^ "store "
                                               ^ (Int.toString(Env.lookup newloc id)),outs)
                                        val (truelbl,label0) = genLabel(nextLabel')
                                        val c = writeString(truelbl ^ ":",outs)
-                                       val (locs'',nextLoc'',nextLabel'',fncs'') = compileExp(e1,outs,(newloc,incNextLoc(nextLoc',t),label0,fncs'))
+                                       val (locs'',nextLoc'',nextLabel'',fncs'') =
+                                            compileExp(e1,outs,(newloc,incNextLoc(nextLoc',t),label0,fncs'))
                                        val (falselbl,label1) = genLabel(nextLabel'')
                                        val d = writeString("ifeq " ^ falselbl, outs)
                                        val env' = compileStm(s,outs,(locs'',nextLoc'',label1,fncs''))
@@ -393,8 +429,15 @@ struct
                             in
                               env'
                             end
-      | A.SReturn(e) => compileExp(e,outs,env)
-      | A.SVReturn => env
+      | A.SReturn(e) => let val env' = compileExp(e,outs,env)
+                            val a = writeString("ireturn",outs)
+                        in
+                          env'
+                        end
+      | A.SVReturn => let val a = writeString("ireturn",outs)
+                      in
+                        env
+                      end
       | A.SBlock(slist) => let val (locs,nextLoc,nextLabel,fncs) = env
                                val (locs',nextLoc',nextLabel',fncs') =
                                     compileStmList(slist,outs,((Env.pushFrame locs Frame.empty),nextLoc,nextLabel,fncs))
@@ -416,12 +459,16 @@ struct
     in
       case params of
         [] => env
-        | (t,id)::ps => updateEnv(((Env.update locs id (getNextLoc(nextLoc)),
+        | (t,id)::ps => updateEnv(((Env.update locs id nextLoc,
                                     incNextLoc(nextLoc,t),nextLabel,fncs),ps))
     end
 
-(*  fun compileDef(d : A.DFun(t,id,params,slist), outs : T.outstream, env : compileenv) : compileenv =
+  fun compileDef(d : A.def, outs : T.outstream, env : compileenv) : compileenv =
+      case d of
+        A.DFun(t,id,params,stms) =>
   let val newenv = updateEnv(env,params)
+      val (locs,nextLoc,nextLabel,fncs) = env
+      val fncs' = Env.extend fncs id (params,t)
       val args = getFunArgs(params)
       val typ = getFunType(t)
       val a = (case id of
@@ -429,37 +476,24 @@ struct
                | _ => writeString((".method public static " ^
                                     id ^ "(" ^ args ^
                                     ")" ^ typ),outs))
-
       val b = writeString((".limit locals 1000"), outs)
       val c = writeString((".limit stack 1000"), outs)
-      val env' = compileStmList(slist,outs,env)
+      val (_,_,nextLabel,fncs'') = compileStmList(stms,outs,(locs,nextLoc,nextLabel,fncs'))
       val e = writeString("nop",outs)
-      val f = writeString((".end method"), outs) in
+      val f = writeString((".end method"), outs)
+      in
+        ((Env.pushFrame Env.empty Frame.empty),0,nextLabel,fncs'')
+      end
+      | _ => env
 
-      end*)
 
-
-  fun compileDefList(defs : A.def list, outs : T.outstream, env : compileenv) : unit =
+  fun compileDefList(defs : A.def list, outs : T.outstream, env : compileenv) : compileenv =
     case defs of
-      [] => ()
-    | d::ds => (case d of
-                  A.DFun(t,id,params,slist) =>
-                    let val newenv = updateEnv(env,params)
-                        val args = getFunArgs(params)
-                        val typ = getFunType(t)
-                        val a = (case id of
-                                   "main" => writeString((".method public static main([Ljava/lang/String;)V"),outs)
-                                 | _ => writeString((".method public static " ^
-                                                      id ^ "(" ^ args ^
-                                                      ")" ^ typ),outs))
-
-                        val b = writeString((".limit locals 1000"), outs)
-                        val c = writeString((".limit stack 1000"), outs)
-                        val env' = compileStmList(slist,outs,env)
-                        val e = writeString("nop",outs) in
-                        writeString((".end method"), outs)
-                        end
-                | _ => ())
+      [] => env
+    | d::ds => let val env' = compileDef(d,outs,env)
+               in
+                 compileDefList(ds,outs,env')
+               end
 
   (*  compile(p, outs) = ().  As a side-effect, p is compiled to Jasmin
   *   assembly, with the resulting assembly code written to the output
@@ -475,8 +509,9 @@ struct
         val f = writeString("invokenonvirtual java/lang/Object/<init>()V",outs)
         val g = writeString("return",outs)
         val h = writeString(".end method",outs)
+        val i = compileDefList(deflist, outs,((Env.pushFrame Env.empty Frame.empty),0,0,Env.pushFrame Env.empty Frame.empty))
     in
-      compileDefList(deflist, outs,(Env.empty,[0],0,Env.empty))
+      ()
     end
 
 end
