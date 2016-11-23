@@ -11,9 +11,9 @@ int main() {
   b = readBool() ;
   printBool(b) ;
 
-  string s ;
-  s = readString() ;
-  printString(s) ;
+  //string s ;
+  //s = readString() ;
+  //printString(s) ;
 
   return 0 ;
 }
